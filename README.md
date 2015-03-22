@@ -24,6 +24,11 @@ was conducted:
 * lowering halfway (Class D)
 * hips to the front (Class E).
 
+Below we evaluate the use of a classification tree and a random forest
+for our model. We expect that the random forest will yield better
+accuracy since its averaging mechanism avoids the overfitting that a
+single deep high variance classification tree can exhibit.
+
 
 ## Loading and Cleaning the DataSet ##
 
