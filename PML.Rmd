@@ -1,0 +1,158 @@
+---
+title: "Machine Learning: Classifying Weightlifting Exercises"
+author: "Don Mowbray"
+output: html_document
+---
+
+<center><h1>Classifying Weightlifting Exercises</h1></center>
+<center><h4>Practical Machine Learning, Coursera</h4></center>
+<center><h4>Don Mowbray</h4></center>
+<center><h4>March 21, 2015</h4></center>
+
+## Overview ##
+
+This report examines the Weight Lifting Exercises (WLE) Dataset (
+[citation](http://groupware.les.inf.puc-rio.br/har) ) to predict
+weightlifting activity quality from several activity
+monitors. Activity quality is represented by the variable *classe*, a
+factor with five levels representing how a barbell lifting activity
+was conducted:
+
+* according to the specification (Class A), 
+* elbows to the front (Class B), 
+* lifting halfway (Class C), 
+* lowering halfway (Class D)
+* hips to the front (Class E).
+
+
+## Loading and Cleaning the DataSet ##
+
+The following code was used to load and clean the datasets. Cleaning
+the dataset involved removing non-predictive columns (user name,
+timestamp, etc.) and deleting columns with missing (NA) values.
+
+```{r loadLibraries, hide=TRUE}
+# load the libraries required for this project
+library(AppliedPredictiveModeling)
+library(caret)
+library(rpart)
+library(rattle)
+```
+
+```{r LoadAndCleanData}
+# load the csv training and testing sets
+training <- read.csv('~/Downloads/pml-training.csv', na.strings=c("NA", ""), header=TRUE)
+testing  <- read.csv('~/Downloads/pml-testing.csv', na.strings=c("NA", ""), header=TRUE)
+
+# remove non-predictive columns
+training <- training[,-c(1:7)]
+testing  <- testing[,-c(1:7)]  
+
+# Delete columns with missing values
+training <-training[,colSums(is.na(training)) == 0]
+testing <-testing[,colSums(is.na(testing)) == 0]
+```
+
+
+## Partitioning for Cross Validation ##
+
+*createDataPartition* is used to create a balanced 75/25 split of the
+training dataset into training and testing subsamples. Balanced
+implies that random sampling occurs within each class to preserve the
+overall class distribution of the data. The resulting training subset
+will be used to construct our models, and the testing subset will be
+employed for cross validation to estimate the accuracy of our
+candidate models with data that is independent from the training
+subset used to fit our models. Thus, cross validation allows us to
+select the most accurate model to apply to the final testing dataset.
+
+```{r CreateDataPartition}
+set.seed(1234)
+inTrain = createDataPartition(training$classe, p = 0.75, list=FALSE)
+subTraining = training[inTrain,]
+subTesting = training[-inTrain,]
+```
+
+
+## Classification Tree Model ###
+
+First we fit a classification tree against the training subset.
+
+```{r TreeFit}
+treeModel <- rpart(classe ~ ., data=subTraining, method="class")
+print(treeModel, digits=3)
+```
+
+Next we formulate predictions from our testing subset. Then we we use
+cross validation to estimate the tree model's accuracy and out of
+sample error.
+
+```{r TreePredict}
+treePredict <- predict(treeModel, subTesting, type = "class")
+cmTree <- confusionMatrix(treePredict, subTesting$classe)
+cmTree
+```
+
+The resulting confusion matrix suggests this model has an accuracy of
+`r round(cmTree$overall['Accuracy'], digits=3)`. Calculating the out
+of sample error as 1 - accuracy, this yields a out of sample error of
+`r round(100*(1.0 - cmTree$overall['Accuracy']), digits=3)` percent.
+
+## Random Forest Model ##
+
+Next we fit a random forest against the training subset. During
+preprocessing, principal component analysis (PCA) is used to reduce
+the dimensionality of the data (feature reduction) while preserving
+the data's essential variance. With the *cv* method parameter, we tune
+the training function to use k-folds cross validation. We choose an
+*ntree* parameter of 50 to balance model accuracy with computational
+performance.
+
+```{r RandomForestFit}
+tc <- trainControl(method="cv", number=5, verboseIter=FALSE , preProcOptions="pca")
+rfModel <- train(classe ~ ., data=subTraining, method="rf", trControl=tc, ntree=50)
+varImp(rfModel$finalModel, top=20) # show variable importance
+```
+
+Next, we run this model against our testing subset to estimate its
+accuracy.
+
+```{r RandomForestPredict}
+rfPredict <- predict(rfModel, subTesting);
+cmRF <- confusionMatrix(rfPredict, subTesting$classe)
+cmRF
+```
+
+Based on the above, we estimate this model has an accuracy of 
+`r round(cmRF$overall['Accuracy'], digits=3)` and an out of sample error of 1 - accuracy =
+`r round(100.0*(1.0 - cmRF$overall['Accuracy']), digits=3)` percent.
+
+## Test Case Model Performance ##
+
+Since the random forest model proved to be the most accurate, we
+select that model and use it to make predictions against the final
+test dataset.
+
+```{r testCases}
+rfTestPredict <- predict(rfModel, testing);
+rfTestPredict
+```
+
+The following code is used to submit our prediction results:
+
+```{r submitResults}
+for(i in 1:length(rfTestPredict)) {
+   filename <- sprintf( "PMLtest%d", i);
+   write.table(rfTestPredict[i], filename, append=FALSE, quote=FALSE, row.names=FALSE, col.names=FALSE);
+}
+```
+
+The random forest model predicted all 20 of the 20 test cases correctly.
+
+## Citations ##
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks,
+H. Qualitative Activity Recognition of Weight Lifting
+Exercises. Proceedings of 4th International Conference in Cooperation
+with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI,
+2013.
